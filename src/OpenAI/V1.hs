@@ -165,9 +165,9 @@ getClientEnv baseUrlText = do
 -- | Augment a 'ClientEnv' so that every outgoing HTTP request includes the
 -- given headers.
 --
--- This is useful for custom tracing / billing headers such as
+-- This is useful for custom tracing / proxy headers such as
 --
--- > setExtraHeaders [("x-bt-parent", "project_id:abc123")]
+-- > setExtraHeaders [("x-parent", "project_id:abc123")]
 --
 -- You can pipe the modified environment straight into 'makeMethods':
 --

@@ -16,6 +16,7 @@ import qualified Network.HTTP.Client as HTTP.Client
 import qualified Network.HTTP.Client.TLS as TLS
 import OpenAI.V1 (Methods (..))
 import qualified OpenAI.V1 as V1
+import qualified OpenAI.V1.Responses as Responses
 import OpenAI.V1.Assistants
   ( AssistantObject (..),
     CreateAssistant (..),
@@ -97,6 +98,7 @@ import qualified System.Environment as Environment
 import qualified Test.Tasty as Tasty
 import qualified Test.Tasty.HUnit as HUnit
 import Prelude hiding (id)
+import qualified Data.IORef as IORef
 
 main :: IO ()
 main = do
@@ -626,6 +628,29 @@ main = do
 
           return ()
 
+  let assistantsWithCodeInterpreterTest = do
+        HUnit.testCase "Assistant with code interpreter tool" do
+          -- Create an assistant enabling the code interpreter tool (no explicit container)
+          AssistantObject {id = aid} <-
+            createAssistant
+              CreateAssistant
+                { model = chatModel,
+                  name = Nothing,
+                  description = Nothing,
+                  instructions = Nothing,
+                  tools = Just [Tool.codeInterpreter],
+                  tool_resources = Nothing,
+                  metadata = Nothing,
+                  temperature = Nothing,
+                  top_p = Nothing,
+                  response_format = Nothing
+                }
+
+          -- Fetch and then delete to ensure the round trip works
+          _ <- retrieveAssistant aid
+          _ <- deleteAssistant aid
+          return ()
+
   let messagesTest = do
         HUnit.testCase "Message operations" do
           ThreadObject {id = threadId} <-
@@ -860,9 +885,134 @@ main = do
 
               return ()
 
+  let responsesMinimalTest =
+        HUnit.testCase "Responses - minimal" do
+          _ <-
+            createResponse
+              Responses._CreateResponse
+                { Responses.model = chatModel,
+                  Responses.input = Just (Responses.Input
+                    [ Responses.Item_InputMessage
+                        { Responses.role = Responses.User
+                        , Responses.content = [ Responses.Input_Text{ Responses.text = "Say hello in one sentence." } ]
+                        , Responses.status = Nothing
+                        }
+                    ]),
+                  Responses.include = Nothing,
+                  Responses.parallel_tool_calls = Nothing,
+                  Responses.store = Nothing,
+                  Responses.instructions = Nothing,
+                  Responses.stream = Nothing,
+                  Responses.stream_options = Nothing,
+                  Responses.metadata = Nothing,
+                  Responses.temperature = Nothing,
+                  Responses.top_p = Nothing,
+                  Responses.tools = Nothing,
+                  Responses.tool_choice = Nothing
+                }
+
+          return ()
+
+  let responsesStreamingHaikuTest =
+        HUnit.testCase "Responses - streaming haiku" do
+          let req =
+                Responses._CreateResponse
+                  { Responses.model = chatModel,
+                    Responses.input = Just (Responses.Input
+                      [ Responses.Item_InputMessage
+                          { Responses.role = Responses.User
+                          , Responses.content = [ Responses.Input_Text{ Responses.text = "Stream a short haiku about the sea." } ]
+                          , Responses.status = Nothing
+                          }
+                      ]),
+                    Responses.include = Nothing,
+                    Responses.parallel_tool_calls = Nothing,
+                    Responses.store = Nothing,
+                    Responses.instructions = Nothing,
+                    Responses.stream = Nothing,
+                    Responses.stream_options = Nothing,
+                    Responses.metadata = Nothing,
+                    Responses.temperature = Nothing,
+                    Responses.top_p = Nothing,
+                    Responses.tools = Nothing,
+                    Responses.tool_choice = Nothing
+                  }
+
+          acc <- IORef.newIORef (Text.empty)
+          done <- Concurrent.newEmptyMVar
+
+          let onEvent (Left _err) = Concurrent.putMVar done ()
+              onEvent (Right ev) = case ev of
+                Responses.ResponseTextDeltaEvent{ Responses.delta = d } ->
+                  IORef.modifyIORef' acc (<> d)
+                Responses.ResponseCompletedEvent{} ->
+                  Concurrent.putMVar done ()
+                _ -> pure ()
+
+          createResponseStreamTyped req onEvent
+
+          _ <- Concurrent.takeMVar done
+          text <- IORef.readIORef acc
+          HUnit.assertBool "Expected non-empty streamed text" (not (Text.null text))
+
+          return ()
+
+  let responsesCodeInterpreterStreamingTest =
+        HUnit.testCase "Responses - streaming with code interpreter" do
+          let req =
+                Responses._CreateResponse
+                  { Responses.model = chatModel,
+                    Responses.input = Just (Responses.Input
+                      [ Responses.Item_InputMessage
+                          { Responses.role = Responses.User
+                          , Responses.content = [ Responses.Input_Text{ Responses.text = "Solve 3x + 11 = 14 and provide x as a number. Use the code interpreter." } ]
+                          , Responses.status = Nothing
+                          }
+                      ]),
+                    Responses.include = Nothing,
+                    Responses.parallel_tool_calls = Nothing,
+                    Responses.store = Nothing,
+                    Responses.instructions = Just "You are a math tutor. Use the code interpreter (python) tool to calculate answers when asked about math.",
+                    Responses.stream = Nothing,
+                    Responses.stream_options = Nothing,
+                    Responses.metadata = Nothing,
+                    Responses.temperature = Nothing,
+                    Responses.top_p = Nothing,
+                    Responses.tools = Just [Tool.codeInterpreterAuto],
+                    Responses.tool_choice = Just Tool.ToolChoiceRequired
+                  }
+
+          acc <- IORef.newIORef (Text.empty)
+          sawCI <- IORef.newIORef False
+          done <- Concurrent.newEmptyMVar
+
+          let onEvent (Left _err) = Concurrent.putMVar done ()
+              onEvent (Right ev) = case ev of
+                Responses.ResponseTextDeltaEvent{ Responses.delta = d } ->
+                  IORef.modifyIORef' acc (<> d)
+                Responses.ResponseCodeInterpreterCallInProgressEvent{} ->
+                  IORef.writeIORef sawCI True
+                Responses.ResponseCodeInterpreterCallInterpretingEvent{} ->
+                  IORef.writeIORef sawCI True
+                Responses.ResponseCodeInterpreterCallCompletedEvent{} -> do
+                  IORef.writeIORef sawCI True
+                Responses.ResponseCompletedEvent{} ->
+                  Concurrent.putMVar done ()
+                _ -> pure ()
+
+          createResponseStreamTyped req onEvent
+
+          _ <- Concurrent.takeMVar done
+          text <- IORef.readIORef acc
+          usedCI <- IORef.readIORef sawCI
+          HUnit.assertBool "Expected some streamed text" (not (Text.null text))
+          HUnit.assertBool "Expected code interpreter activity in stream" usedCI
+
+          return ()
+
   let tests =
-        speechTests
-          <> [ transcriptionTest,
+          speechTests
+            <> [ transcriptionTest,
                translationTest,
                completionsMinimalTest,
                completionsMinimalReasoningTest,
@@ -878,7 +1028,11 @@ main = do
                createImageVariationMinimalTest,
                createImageVariationMaximalTest,
                createModerationTest,
+               responsesMinimalTest,
+               responsesStreamingHaikuTest,
+               responsesCodeInterpreterStreamingTest,
                assistantsTest,
+               assistantsWithCodeInterpreterTest,
                messagesTest,
                threadsRunsStepsTest,
                vectorStoreFilesTest

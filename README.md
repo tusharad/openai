@@ -40,6 +40,40 @@ main = do
     traverse_ display choices
 ```
 
+### Responses API (JSON)
+
+```haskell
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
+
+import qualified Data.Text as Text
+import qualified OpenAI.V1 as V1
+import qualified OpenAI.V1.Responses as Responses
+
+main :: IO ()
+main = do
+    key <- System.Environment.getEnv "OPENAI_KEY"
+
+    env <- V1.getClientEnv "https://api.openai.com"
+    let V1.Methods{ createResponse } = V1.makeMethods env (Text.pack key) Nothing Nothing
+
+    let req = Responses._CreateResponse
+            { Responses.model = "gpt-5"
+            , Responses.input = Just (Responses.Input
+                [ Responses.Item_InputMessage
+                    { Responses.role = Responses.User
+                    , Responses.content = [ Responses.Input_Text{ Responses.text = "Say hello in one sentence." } ]
+                    , Responses.status = Nothing
+                    }
+                ])
+            }
+
+    res <- createResponse req
+    print res
+```
+
+
 ## Setup
 
 ### Using Nix with Flakes (Recommended)

@@ -8,7 +8,6 @@ module Main where
 import Data.Aeson (FromJSON (..), (.:), (.=), withObject)
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy as LBS
-import qualified Data.ByteString.Lazy.Char8 as LBS8
 import Data.Foldable (toList)
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -76,9 +75,6 @@ main = do
                 , Responses.tools = Just [horoscopeTool]
                 }
 
-    putStrLn "First request payload:"
-    LBS8.putStrLn (Aeson.encode firstRequest)
-
     firstResponse <- createResponse firstRequest
 
     let Responses.ResponseObject{ Responses.output = outputItems } = firstResponse
@@ -86,9 +82,7 @@ main = do
         hasFunctionCall = Prelude.any isFunctionCall outputList
 
     if not hasFunctionCall
-        then do
-            putStrLn "Model did not return a tool call, printing text output instead:"
-            mapM_ TextIO.putStrLn (collectText firstResponse)
+        then mapM_ TextIO.putStrLn (collectText firstResponse)
         else do
             additionalInputs <- gatherInputs outputList
 
@@ -104,9 +98,6 @@ main = do
 
             finalResponse <- createResponse secondRequest
 
-            putStrLn "Final output:"
-            LBS8.putStrLn (Aeson.encode finalResponse)
-            TextIO.putStrLn ""
             mapM_ TextIO.putStrLn (collectText finalResponse)
 
 isFunctionCall :: Responses.OutputItem -> Bool
@@ -138,49 +129,41 @@ processFunctionCall
         , Responses.function_arguments = argumentsText
         , Responses.function_status = statusText
         } = do
-        TextIO.putStrLn $ "Processing tool call: " <> functionName
+    let callInput =
+            Responses.Item_Input_Function_Call
+                { Responses.id = functionId
+                , Responses.call_id = callId
+                , Responses.name = functionName
+                , Responses.arguments = argumentsText
+                , Responses.status = statusText
+                }
+        argumentsBytes = Text.Encoding.encodeUtf8 argumentsText
 
-        let callInput =
-                Responses.Item_Input_Function_Call
-                    { Responses.id = functionId
-                    , Responses.call_id = callId
-                    , Responses.name = functionName
-                    , Responses.arguments = argumentsText
-                    , Responses.status = statusText
-                    }
-            argumentsBytes = Text.Encoding.encodeUtf8 argumentsText
+    case Aeson.eitherDecodeStrict' argumentsBytes of
+        Left err -> do
+            let payload = Aeson.object ["error" .= Text.pack err]
+                outputText = Text.Encoding.decodeUtf8 (LBS.toStrict (Aeson.encode payload))
+                outputItem =
+                    Responses.Item_Input_Function_Call_Output
+                        { Responses.id = Nothing
+                        , Responses.call_id = callId
+                        , Responses.output = outputText
+                        , Responses.status = Just "incomplete"
+                        }
+            pure (callInput, outputItem)
 
-        case Aeson.eitherDecodeStrict' argumentsBytes of
-            Left err -> do
-                TextIO.putStrLn $ "Failed to decode arguments: " <> Text.pack err
-                let payload = Aeson.object ["error" .= Text.pack err]
-                    outputText = Text.Encoding.decodeUtf8 (LBS.toStrict (Aeson.encode payload))
-                    outputItem =
-                        Responses.Item_Input_Function_Call_Output
-                            { Responses.id = Nothing
-                            , Responses.call_id = callId
-                            , Responses.output = outputText
-                            , Responses.status = Just "incomplete"
-                            }
-                TextIO.putStrLn ""
-                pure (callInput, outputItem)
-
-            Right HoroscopeArgs{ sign } -> do
-                let horoscope = getHoroscope sign
-                    payload = Aeson.object ["horoscope" .= horoscope]
-                    outputText = Text.Encoding.decodeUtf8 (LBS.toStrict (Aeson.encode payload))
-                    outputItem =
-                        Responses.Item_Input_Function_Call_Output
-                            { Responses.id = Nothing
-                            , Responses.call_id = callId
-                            , Responses.output = outputText
-                            , Responses.status = Just "completed"
-                            }
-
-                TextIO.putStrLn $ "Horoscope: " <> horoscope
-                TextIO.putStrLn ""
-
-                pure (callInput, outputItem)
+        Right HoroscopeArgs{ sign } -> do
+            let horoscope = getHoroscope sign
+                payload = Aeson.object ["horoscope" .= horoscope]
+                outputText = Text.Encoding.decodeUtf8 (LBS.toStrict (Aeson.encode payload))
+                outputItem =
+                    Responses.Item_Input_Function_Call_Output
+                        { Responses.id = Nothing
+                        , Responses.call_id = callId
+                        , Responses.output = outputText
+                        , Responses.status = Just "completed"
+                        }
+            pure (callInput, outputItem)
 processFunctionCall other =
     error $ "Unexpected output item: " <> show other
 

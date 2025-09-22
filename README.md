@@ -61,7 +61,7 @@ main = do
     let req = Responses._CreateResponse
             { Responses.model = "gpt-5"
             , Responses.input = Just (Responses.Input
-                [ Responses.Item_InputMessage
+                [ Responses.Item_Input_Message
                     { Responses.role = Responses.User
                     , Responses.content = [ Responses.Input_Text{ Responses.text = "Say hello in one sentence." } ]
                     , Responses.status = Nothing
@@ -72,7 +72,6 @@ main = do
     res <- createResponse req
     print res
 ```
-
 
 ## Setup
 
@@ -136,6 +135,42 @@ direnv allow
 ```
 
 The API key is needed for running the test suite and example program.
+
+## Code Formatting
+
+This project uses [fourmolu](https://github.com/fourmolu/fourmolu) for consistent Haskell code formatting.
+
+### Format All Files
+
+```bash
+# Using Nix development environment
+nix develop --command fourmolu -i src tasty examples
+
+# Or if already in nix develop shell
+fourmolu -i src tasty examples
+
+# Format a single directory
+fourmolu -i src
+```
+
+### Format Specific Files
+
+```bash
+# Format a single file
+fourmolu -i src/OpenAI/V1/Responses.hs
+
+# Check formatting without modifying (useful for CI)
+fourmolu --mode check src tasty examples
+```
+
+### Configuration
+
+The formatter configuration is in `fourmolu.yaml` with:
+
+- Leading comma style for better git diffs
+- 2-space indentation
+- Trailing import/export style
+- Single-line Haddock comments
 
 ## Testing
 

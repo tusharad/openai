@@ -857,7 +857,7 @@ main = do
               Responses._CreateResponse
                 { Responses.model = chatModel,
                   Responses.input = Just (Responses.Input
-                    [ Responses.Item_InputMessage
+                    [ Responses.Item_Input_Message
                         { Responses.role = Responses.User
                         , Responses.content = [ Responses.Input_Text{ Responses.text = "Say hello in one sentence." } ]
                         , Responses.status = Nothing
@@ -884,7 +884,7 @@ main = do
                 Responses._CreateResponse
                   { Responses.model = chatModel,
                     Responses.input = Just (Responses.Input
-                      [ Responses.Item_InputMessage
+                      [ Responses.Item_Input_Message
                           { Responses.role = Responses.User
                           , Responses.content = [ Responses.Input_Text{ Responses.text = "Stream a short haiku about the sea." } ]
                           , Responses.status = Nothing
@@ -928,7 +928,7 @@ main = do
                 Responses._CreateResponse
                   { Responses.model = chatModel,
                     Responses.input = Just (Responses.Input
-                      [ Responses.Item_InputMessage
+                      [ Responses.Item_Input_Message
                           { Responses.role = Responses.User
                           , Responses.content = [ Responses.Input_Text{ Responses.text = "Solve 3x + 11 = 14 and provide x as a number. Use the code interpreter." } ]
                           , Responses.status = Nothing
